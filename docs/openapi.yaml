@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: Pulseboard API
+  version: 1.0.0-phase1
+  description: Phase 1 API for authentication and current-user access.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Process health
+      responses: { '200': { description: Service is running } }
+  /ready:
+    get:
+      summary: Database readiness
+      responses: { '200': { description: Database is reachable }, '503': { description: Database unavailable } }
+  /api/auth/register:
+    post:
+      summary: Register a user
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AuthRequest' } } } }
+      responses: { '201': { description: Registered }, '400': { $ref: '#/components/responses/InvalidRequest' }, '409': { description: Email already exists }, '429': { $ref: '#/components/responses/RateLimited' } }
+  /api/auth/login:
+    post:
+      summary: Login and receive a JWT
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AuthRequest' } } } }
+      responses: { '200': { description: Token issued, content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string } } } } } }, '400': { $ref: '#/components/responses/InvalidRequest' }, '401': { description: Invalid credentials }, '429': { $ref: '#/components/responses/RateLimited' } }
+  /api/me:
+    get:
+      summary: Current authenticated user
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: User profile, content: { application/json: { schema: { $ref: '#/components/schemas/UserProfile' } } } }, '401': { description: Missing, invalid, expired, or incorrectly signed token } }
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT } }
+  schemas:
+    AuthRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, minLength: 6 } } }
+    UserProfile: { type: object, required: [id, email, created_at], properties: { id: { type: integer }, email: { type: string, format: email }, created_at: { type: string, format: date-time } } }
+  responses:
+    InvalidRequest: { description: Invalid JSON, email, or password }
+    RateLimited: { description: Too many requests; inspect Retry-After header }
