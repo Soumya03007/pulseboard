@@ -3,15 +3,17 @@ package routes_test
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/Soumya03007/pulseboard/internal/config"
-	"github.com/Soumya03007/pulseboard/internal/migrations"
-	"github.com/Soumya03007/pulseboard/internal/routes"
-	"github.com/golang-jwt/jwt/v5"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Soumya03007/pulseboard/internal/config"
+	"github.com/Soumya03007/pulseboard/internal/migrations"
+	"github.com/Soumya03007/pulseboard/internal/routes"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestAuthenticationFlow(t *testing.T) {
@@ -26,7 +28,7 @@ func TestAuthenticationFlow(t *testing.T) {
 	if err := migrations.Apply(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE users RESTART IDENTITY").Error; err != nil {
+	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
 		t.Fatal(err)
 	}
 	router := routes.NewRouter(db, "test-secret")
@@ -68,6 +70,105 @@ func TestAuthenticationFlow(t *testing.T) {
 	}
 }
 
+func TestBoardsFlow(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	db, err := config.OpenDatabase(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Apply(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
+		t.Fatal(err)
+	}
+	router := routes.NewRouter(db, "test-secret")
+	firstToken := registerAndLogin(t, router, "first@example.com")
+	secondToken := registerAndLogin(t, router, "second@example.com")
+
+	if response := callAny(router, http.MethodGet, "/api/boards", nil, ""); response.Code != http.StatusUnauthorized {
+		t.Fatalf("boards without token: %d", response.Code)
+	}
+	if response := callAny(router, http.MethodPost, "/api/boards", map[string]string{"title": "   "}, "Bearer "+firstToken); response.Code != http.StatusBadRequest {
+		t.Fatalf("blank title: %d", response.Code)
+	}
+
+	create := callAny(router, http.MethodPost, "/api/boards", map[string]string{"title": "Launch", "description": "v1.1 board"}, "Bearer "+firstToken)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", create.Code, create.Body.String())
+	}
+	var board struct {
+		ID          uint    `json:"id"`
+		OwnerID     uint    `json:"owner_id"`
+		Title       string  `json:"title"`
+		Description *string `json:"description"`
+		DeletedAt   *string `json:"deleted_at"`
+	}
+	if err := json.Unmarshal(create.Body.Bytes(), &board); err != nil {
+		t.Fatal(err)
+	}
+	if board.ID == 0 || board.OwnerID == 0 || board.Title != "Launch" || board.Description == nil || *board.Description != "v1.1 board" || board.DeletedAt != nil {
+		t.Fatalf("created board response: %s", create.Body.String())
+	}
+
+	if response := callAny(router, http.MethodGet, fmt.Sprintf("/api/boards/%d", board.ID), nil, "Bearer "+secondToken); response.Code != http.StatusNotFound {
+		t.Fatalf("other user get: %d", response.Code)
+	}
+	if response := callAny(router, http.MethodPatch, fmt.Sprintf("/api/boards/%d", board.ID), map[string]string{"title": "Nope"}, "Bearer "+secondToken); response.Code != http.StatusNotFound {
+		t.Fatalf("other user update: %d", response.Code)
+	}
+	if response := callAny(router, http.MethodDelete, fmt.Sprintf("/api/boards/%d", board.ID), nil, "Bearer "+secondToken); response.Code != http.StatusNotFound {
+		t.Fatalf("other user delete: %d", response.Code)
+	}
+
+	update := callAny(router, http.MethodPatch, fmt.Sprintf("/api/boards/%d", board.ID), map[string]string{"title": "Updated", "description": ""}, "Bearer "+firstToken)
+	if update.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", update.Code, update.Body.String())
+	}
+	var updated struct {
+		Title       string  `json:"title"`
+		Description *string `json:"description"`
+	}
+	if err := json.Unmarshal(update.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != "Updated" || updated.Description != nil {
+		t.Fatalf("updated board response: %s", update.Body.String())
+	}
+
+	list := callAny(router, http.MethodGet, "/api/boards", nil, "Bearer "+firstToken)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list: %d", list.Code)
+	}
+	var boards []struct {
+		ID uint `json:"id"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &boards); err != nil {
+		t.Fatal(err)
+	}
+	if len(boards) != 1 || boards[0].ID != board.ID {
+		t.Fatalf("list response: %s", list.Body.String())
+	}
+
+	remove := callAny(router, http.MethodDelete, fmt.Sprintf("/api/boards/%d", board.ID), nil, "Bearer "+firstToken)
+	if remove.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", remove.Code)
+	}
+	if response := callAny(router, http.MethodGet, fmt.Sprintf("/api/boards/%d", board.ID), nil, "Bearer "+firstToken); response.Code != http.StatusNotFound {
+		t.Fatalf("get deleted: %d", response.Code)
+	}
+	if response := callAny(router, http.MethodDelete, fmt.Sprintf("/api/boards/%d", board.ID), nil, "Bearer "+firstToken); response.Code != http.StatusNotFound {
+		t.Fatalf("delete deleted: %d", response.Code)
+	}
+	empty := callAny(router, http.MethodGet, "/api/boards", nil, "Bearer "+firstToken)
+	if empty.Code != http.StatusOK || empty.Body.String() != "[]" {
+		t.Fatalf("empty list: %d %s", empty.Code, empty.Body.String())
+	}
+}
+
 func signedToken(t *testing.T, secret string, expiresAt time.Time) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": 1, "exp": expiresAt.Unix()})
@@ -79,6 +180,29 @@ func signedToken(t *testing.T, secret string, expiresAt time.Time) string {
 }
 
 func call(router http.Handler, method, path string, body map[string]string, authorization string) *httptest.ResponseRecorder {
+	return callAny(router, method, path, body, authorization)
+}
+
+func registerAndLogin(t *testing.T, router http.Handler, email string) string {
+	t.Helper()
+	register := call(router, http.MethodPost, "/api/auth/register", map[string]string{"email": email, "password": "password"}, "")
+	if register.Code != http.StatusCreated {
+		t.Fatalf("register %s: %d %s", email, register.Code, register.Body.String())
+	}
+	login := call(router, http.MethodPost, "/api/auth/login", map[string]string{"email": email, "password": "password"}, "")
+	if login.Code != http.StatusOK {
+		t.Fatalf("login %s: %d %s", email, login.Code, login.Body.String())
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(login.Body.Bytes(), &body); err != nil || body.Token == "" {
+		t.Fatalf("missing token for %s", email)
+	}
+	return body.Token
+}
+
+func callAny(router http.Handler, method, path string, body interface{}, authorization string) *httptest.ResponseRecorder {
 	var payload []byte
 	if body != nil {
 		payload, _ = json.Marshal(body)

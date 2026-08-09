@@ -1,12 +1,21 @@
 {
-  "info": { "name": "Pulseboard Phase 1", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
-  "variable": [{ "key": "baseUrl", "value": "http://localhost:8080" }, { "key": "token", "value": "" }],
+  "info": { "name": "Pulseboard v1.1", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "boardId", "value": "" }
+  ],
   "item": [
     { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
     { "name": "Ready", "request": { "method": "GET", "url": "{{baseUrl}}/ready" } },
-    { "name": "Register", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \email\: \person@example.com\,\n  \password\: \password123\\n}" }, "url": "{{baseUrl}}/api/auth/register" } },
-    { "name": "Login", "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('token', pm.response.json().token);"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \email\: \person@example.com\,\n  \password\: \password123\\n}" }, "url": "{{baseUrl}}/api/auth/login" } },
+    { "name": "Register", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"person@example.com\",\n  \"password\": \"password123\"\n}" }, "url": "{{baseUrl}}/api/auth/register" } },
+    { "name": "Login", "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('token', pm.response.json().token);"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"person@example.com\",\n  \"password\": \"password123\"\n}" }, "url": "{{baseUrl}}/api/auth/login" } },
     { "name": "Current user", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/api/me" } },
+    { "name": "Create board", "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('boardId', pm.response.json().id);"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Launch Plan\",\n  \"description\": \"v1.1 rollout board\"\n}" }, "url": "{{baseUrl}}/api/boards" } },
+    { "name": "List boards", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/api/boards" } },
+    { "name": "Get board", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/api/boards/{{boardId}}" } },
+    { "name": "Update board", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Updated Launch Plan\",\n  \"description\": \"Revised rollout board\"\n}" }, "url": "{{baseUrl}}/api/boards/{{boardId}}" } },
+    { "name": "Delete board", "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{baseUrl}}/api/boards/{{boardId}}" } },
     { "name": "Current user without token", "request": { "method": "GET", "url": "{{baseUrl}}/api/me" } }
   ]
 }
