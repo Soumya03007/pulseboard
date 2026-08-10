@@ -1,6 +1,9 @@
 package routes
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/Soumya03007/pulseboard/internal/handlers"
 	"github.com/Soumya03007/pulseboard/internal/middleware"
 	"github.com/Soumya03007/pulseboard/internal/repository"
@@ -8,8 +11,6 @@ import (
 	"github.com/Soumya03007/pulseboard/pkg/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"net/http"
-	"time"
 )
 
 func NewRouter(db *gorm.DB, jwtSecret string) *gin.Engine {
@@ -37,7 +38,10 @@ func NewRouter(db *gorm.DB, jwtSecret string) *gin.Engine {
 	loginLimiter := middleware.NewIPRateLimiter(10, time.Minute)
 	api.POST("/auth/register", registrationLimiter.Middleware(), auth.Register)
 	api.POST("/auth/login", loginLimiter.Middleware(), auth.Login)
-	api.GET("/me", middleware.RequireAuth(jwtSecret), profile.Me)
+	meRoutes := api.Group("/me", middleware.RequireAuth(jwtSecret))
+	meRoutes.GET("", profile.Me)
+	meRoutes.PATCH("", profile.UpdateProfile)
+	meRoutes.DELETE("", profile.DeleteProfile)
 	boardRoutes := api.Group("/boards", middleware.RequireAuth(jwtSecret))
 	boardRoutes.POST("", boardHandler.Create)
 	boardRoutes.GET("", boardHandler.List)

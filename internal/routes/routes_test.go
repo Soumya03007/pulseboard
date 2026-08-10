@@ -70,6 +70,68 @@ func TestAuthenticationFlow(t *testing.T) {
 	}
 }
 
+func TestUserProfileManagement(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	db, err := config.OpenDatabase(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Apply(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
+		t.Fatal(err)
+	}
+	router := routes.NewRouter(db, "test-secret")
+	token := registerAndLogin(t, router, "profile@example.com")
+
+	profile := callAny(router, http.MethodGet, "/api/me", nil, "Bearer "+token)
+	if profile.Code != http.StatusOK {
+		t.Fatalf("get profile: %d %s", profile.Code, profile.Body.String())
+	}
+	var payload struct {
+		DisplayName   string `json:"display_name"`
+		StatusMessage string `json:"status_message"`
+	}
+	if err := json.Unmarshal(profile.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.DisplayName != "" || payload.StatusMessage != "" {
+		t.Fatalf("default profile: %+v", payload)
+	}
+
+	update := callAny(router, http.MethodPatch, "/api/me", map[string]string{"display_name": "Ada", "status_message": "Planning v1.2"}, "Bearer "+token)
+	if update.Code != http.StatusOK {
+		t.Fatalf("update profile: %d %s", update.Code, update.Body.String())
+	}
+	var updated struct {
+		DisplayName   string `json:"display_name"`
+		StatusMessage string `json:"status_message"`
+	}
+	if err := json.Unmarshal(update.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.DisplayName != "Ada" || updated.StatusMessage != "Planning v1.2" {
+		t.Fatalf("updated profile: %s", update.Body.String())
+	}
+
+	invalid := callAny(router, http.MethodPatch, "/api/me", map[string]string{"display_name": "   "}, "Bearer "+token)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("blank display name: %d %s", invalid.Code, invalid.Body.String())
+	}
+
+	deleteResponse := callAny(router, http.MethodDelete, "/api/me", nil, "Bearer "+token)
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("delete profile: %d %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+	if response := callAny(router, http.MethodGet, "/api/me", nil, "Bearer "+token); response.Code != http.StatusUnauthorized {
+		t.Fatalf("profile after delete: %d", response.Code)
+	}
+}
+
 func TestBoardsFlow(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
