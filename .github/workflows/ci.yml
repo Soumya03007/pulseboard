@@ -35,5 +35,7 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Verify repo sync
+        run: bash scripts/check_repo_sync.sh
       - name: Build Docker image
         run: docker build -t pulseboard .
