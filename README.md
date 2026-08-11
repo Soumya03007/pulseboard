@@ -1,6 +1,6 @@
 # Pulseboard
 
-Pulseboard is a Go API foundation. This milestone provides PostgreSQL-backed user registration, login, authenticated current-user access, profile management, and owner-only boards. Pulses, UI, teams, sharing, and WebSockets are intentionally not implemented yet.
+Pulseboard is a Go API foundation. This milestone provides PostgreSQL-backed user registration, login, authenticated current-user access, profile management, presence/availability state, lightweight activity tracking, and owner-only boards. Pulses, UI, teams, sharing, and WebSockets are intentionally not implemented yet.
 
 ## Run locally
 
@@ -18,11 +18,11 @@ Public registration is limited to 5 requests per minute per IP and login to 10 r
 
 `GET /health` checks process health. `GET /ready` checks PostgreSQL connectivity.
 
-`POST /api/auth/register` and `POST /api/auth/login` accept `{"email":"user@example.com","password":"six-or-more-characters"}`. Login returns a JWT. Send it as `Authorization: Bearer <token>` to call `GET /api/me`, `PATCH /api/me`, or `DELETE /api/me`.
+`POST /api/auth/register` and `POST /api/auth/login` accept `{"email":"user@example.com","password":"six-or-more-characters"}`. Login returns a JWT. Send it as `Authorization: Bearer <token>` to call `GET /api/me`, `PATCH /api/me`, `DELETE /api/me`, `GET /api/me/activities`, `POST /api/me/activities`, or `POST /api/me/activities/complete`.
 
 Authenticated board endpoints live under `/api/boards`. Create with `POST /api/boards` using `{"title":"Launch Plan","description":"optional notes"}`. Use `GET /api/boards`, `GET /api/boards/{id}`, `PATCH /api/boards/{id}`, and `DELETE /api/boards/{id}` for owner-only board access. Deleted boards are soft-deleted and hidden from API responses.
 
-There is deliberately no public user-list API. Profile updates support a lightweight `display_name` and `status_message` contract for future dashboard usage.
+There is deliberately no public user-list API. Profile updates support a lightweight `display_name`, `status_message`, `presence`, and `availability` contract for future dashboard usage, and activity endpoints let a user manage their current work state.
 
 ## API documentation
 

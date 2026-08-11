@@ -132,6 +132,102 @@ func TestUserProfileManagement(t *testing.T) {
 	}
 }
 
+func TestUserStateAndActivityFlow(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	db, err := config.OpenDatabase(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Apply(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("TRUNCATE boards, users, activities RESTART IDENTITY").Error; err != nil {
+		t.Fatal(err)
+	}
+	router := routes.NewRouter(db, "test-secret")
+	token := registerAndLogin(t, router, "state@example.com")
+
+	stateUpdate := callAny(router, http.MethodPatch, "/api/me", map[string]string{"presence": "away", "availability": "in_meeting"}, "Bearer "+token)
+	if stateUpdate.Code != http.StatusOK {
+		t.Fatalf("state update: %d %s", stateUpdate.Code, stateUpdate.Body.String())
+	}
+	var profile struct {
+		Presence     string `json:"presence"`
+		Availability string `json:"availability"`
+	}
+	if err := json.Unmarshal(stateUpdate.Body.Bytes(), &profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.Presence != "away" || profile.Availability != "in_meeting" {
+		t.Fatalf("state response: %s", stateUpdate.Body.String())
+	}
+
+	createActivity := callAny(router, http.MethodPost, "/api/me/activities", map[string]string{"title": "Implementing presence flow"}, "Bearer "+token)
+	if createActivity.Code != http.StatusCreated {
+		t.Fatalf("create activity: %d %s", createActivity.Code, createActivity.Body.String())
+	}
+	var activity struct {
+		ID     uint   `json:"id"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(createActivity.Body.Bytes(), &activity); err != nil {
+		t.Fatal(err)
+	}
+	if activity.ID == 0 || activity.Title != "Implementing presence flow" || activity.Status != "active" {
+		t.Fatalf("activity response: %s", createActivity.Body.String())
+	}
+
+	list := callAny(router, http.MethodGet, "/api/me/activities", nil, "Bearer "+token)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list activities: %d %s", list.Code, list.Body.String())
+	}
+	var activities []struct {
+		ID     uint   `json:"id"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &activities); err != nil {
+		t.Fatal(err)
+	}
+	if len(activities) != 1 || activities[0].ID != activity.ID || activities[0].Status != "active" {
+		t.Fatalf("activity list: %s", list.Body.String())
+	}
+
+	complete := callAny(router, http.MethodPost, "/api/me/activities/complete", nil, "Bearer "+token)
+	if complete.Code != http.StatusOK {
+		t.Fatalf("complete activity: %d %s", complete.Code, complete.Body.String())
+	}
+	var completed struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(complete.Body.Bytes(), &completed); err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != "completed" {
+		t.Fatalf("completed activity: %s", complete.Body.String())
+	}
+
+	me := callAny(router, http.MethodGet, "/api/me", nil, "Bearer "+token)
+	if me.Code != http.StatusOK {
+		t.Fatalf("me after complete: %d %s", me.Code, me.Body.String())
+	}
+	var latestProfile struct {
+		CurrentActivity *struct {
+			ID uint `json:"id"`
+		} `json:"current_activity"`
+	}
+	if err := json.Unmarshal(me.Body.Bytes(), &latestProfile); err != nil {
+		t.Fatal(err)
+	}
+	if latestProfile.CurrentActivity != nil {
+		t.Fatalf("current activity should be cleared: %s", me.Body.String())
+	}
+}
+
 func TestBoardsFlow(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
