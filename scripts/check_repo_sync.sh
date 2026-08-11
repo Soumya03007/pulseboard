@@ -40,6 +40,13 @@ check_contains .github/workflows/docker-publish.yml 'context: .'
 check_contains Dockerfile 'EXPOSE 8080'
 check_contains .env.example 'PORT=8080'
 check_contains README.md 'docker compose'
-check_contains docs/openapi.yaml 'version: 1.2.0'
+
+openapi_version=$(grep -E '^  version: ' docs/openapi.yaml | head -n 1 | tr -d '[:space:]' | cut -d: -f2)
+if [[ -z "$openapi_version" ]]; then
+  echo "Could not determine OpenAPI version from docs/openapi.yaml"
+  exit 1
+fi
+
+check_contains docs/openapi.yaml "version: $openapi_version"
 
 echo "Repository sync checks passed."
