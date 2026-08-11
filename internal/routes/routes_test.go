@@ -14,6 +14,7 @@ import (
 	"github.com/Soumya03007/pulseboard/internal/migrations"
 	"github.com/Soumya03007/pulseboard/internal/routes"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
 func TestAuthenticationFlow(t *testing.T) {
@@ -28,9 +29,7 @@ func TestAuthenticationFlow(t *testing.T) {
 	if err := migrations.Apply(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
-		t.Fatal(err)
-	}
+	resetTestDB(t, db)
 	router := routes.NewRouter(db, "test-secret")
 	register := call(router, http.MethodPost, "/api/auth/register", map[string]string{"email": "person@example.com", "password": "password"}, "")
 	if register.Code != http.StatusCreated {
@@ -82,9 +81,7 @@ func TestUserProfileManagement(t *testing.T) {
 	if err := migrations.Apply(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
-		t.Fatal(err)
-	}
+	resetTestDB(t, db)
 	router := routes.NewRouter(db, "test-secret")
 	token := registerAndLogin(t, router, "profile@example.com")
 
@@ -144,9 +141,7 @@ func TestUserStateAndActivityFlow(t *testing.T) {
 	if err := migrations.Apply(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE boards, users, activities RESTART IDENTITY").Error; err != nil {
-		t.Fatal(err)
-	}
+	resetTestDB(t, db)
 	router := routes.NewRouter(db, "test-secret")
 	token := registerAndLogin(t, router, "state@example.com")
 
@@ -240,9 +235,7 @@ func TestBoardsFlow(t *testing.T) {
 	if err := migrations.Apply(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("TRUNCATE boards, users RESTART IDENTITY").Error; err != nil {
-		t.Fatal(err)
-	}
+	resetTestDB(t, db)
 	router := routes.NewRouter(db, "test-secret")
 	firstToken := registerAndLogin(t, router, "first@example.com")
 	secondToken := registerAndLogin(t, router, "second@example.com")
@@ -337,6 +330,12 @@ func signedToken(t *testing.T, secret string, expiresAt time.Time) string {
 	return signed
 }
 
+func resetTestDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec("TRUNCATE boards, users, activities RESTART IDENTITY CASCADE").Error; err != nil {
+		t.Fatal(err)
+	}
+}
 func call(router http.Handler, method, path string, body map[string]string, authorization string) *httptest.ResponseRecorder {
 	return callAny(router, method, path, body, authorization)
 }
